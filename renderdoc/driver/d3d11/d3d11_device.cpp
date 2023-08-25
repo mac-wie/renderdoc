@@ -131,37 +131,41 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
     m_DeviceRecord->SubResources = NULL;
 
     RenderDoc::Inst().AddDeviceFrameCapturer((ID3D11Device *)this, this);
+  }
 
+  {
+    IDXGIDevice *pDXGIDevice = NULL;
+    HRESULT hr = m_pDevice->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
+
+    if(FAILED(hr))
     {
-      IDXGIDevice *pDXGIDevice = NULL;
-      HRESULT hr = m_pDevice->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
+      RDCERR("Couldn't get DXGI device from D3D device");
+    }
+    else
+    {
+      IDXGIAdapter *pDXGIAdapter = NULL;
+      hr = pDXGIDevice->GetParent(__uuidof(IDXGIAdapter), (void **)&pDXGIAdapter);
 
-      if(FAILED(hr))
+      if(SUCCEEDED(hr))
       {
-        RDCERR("Couldn't get DXGI device from D3D device");
+        WrappedIDXGIAdapter4 *pWrappedIDXGIAdapter = new WrappedIDXGIAdapter4(pDXGIAdapter, NULL);
+        m_pWrappedIDXGIDevice = new WrappedIDXGIDevice4(pDXGIDevice, this, pWrappedIDXGIAdapter);
+        SAFE_RELEASE(pWrappedIDXGIAdapter);
+
+        DXGI_ADAPTER_DESC desc = {};
+        pDXGIAdapter->GetDesc(&desc);
+
+        m_InitParams.AdapterDesc = desc;
+
+        GPUVendor vendor = GPUVendorFromPCIVendor(desc.VendorId);
+        rdcstr descString = GetDriverVersion(desc);
+
+        RDCLOG("New D3D11 device created: %s / %s", ToStr(vendor).c_str(), descString.c_str());
       }
       else
       {
-        IDXGIAdapter *pDXGIAdapter = NULL;
-        hr = pDXGIDevice->GetParent(__uuidof(IDXGIAdapter), (void **)&pDXGIAdapter);
-
-        if(SUCCEEDED(hr))
-        {
-          DXGI_ADAPTER_DESC desc = {};
-          pDXGIAdapter->GetDesc(&desc);
-
-          m_InitParams.AdapterDesc = desc;
-
-          GPUVendor vendor = GPUVendorFromPCIVendor(desc.VendorId);
-          rdcstr descString = GetDriverVersion(desc);
-
-          RDCLOG("New D3D11 device created: %s / %s", ToStr(vendor).c_str(), descString.c_str());
-
-          SAFE_RELEASE(pDXGIAdapter);
-        }
+        m_pWrappedIDXGIDevice = new WrappedIDXGIDevice4(pDXGIDevice, this);
       }
-
-      SAFE_RELEASE(pDXGIDevice);
     }
   }
 
@@ -321,6 +325,8 @@ WrappedID3D11Device::~WrappedID3D11Device()
   SAFE_RELEASE(m_WrappedVideo.m_pReal2);
   SAFE_RELEASE(m_WrappedDebug.m_pDebug);
   SAFE_RELEASE(m_pDevice);
+
+  SAFE_DELETE(m_pWrappedIDXGIDevice);
 
   if(!IsStructuredExporting(m_State))
   {
@@ -579,92 +585,23 @@ HRESULT WrappedID3D11Device::QueryInterface(REFIID riid, void **ppvObject)
   static const GUID D3DInternal_uuid = {
       0x26c5dc23, 0xe49c, 0x4b0a, {0x8f, 0x79, 0xe7, 0xb1, 0xac, 0x80, 0x4d, 0x32}};
 
-  HRESULT hr = S_OK;
-
   if(riid == __uuidof(IUnknown))
   {
     *ppvObject = (IUnknown *)(ID3D11Device4 *)this;
     AddRef();
     return S_OK;
   }
-  else if(riid == __uuidof(IDXGIDevice))
+  else if(riid == __uuidof(IDXGIDevice) || riid == __uuidof(IDXGIDevice1) ||
+          riid == __uuidof(IDXGIDevice2) || riid == __uuidof(IDXGIDevice3) ||
+          riid == __uuidof(IDXGIDevice4))
   {
-    hr = m_pDevice->QueryInterface(riid, ppvObject);
-
-    if(SUCCEEDED(hr))
+    if(m_pWrappedIDXGIDevice)
     {
-      IDXGIDevice *real = (IDXGIDevice *)(*ppvObject);
-      *ppvObject = (IDXGIDevice *)(new WrappedIDXGIDevice4(real, this));
-      return S_OK;
+      return m_pWrappedIDXGIDevice->QueryInterface(riid, ppvObject);
     }
     else
     {
-      *ppvObject = NULL;
-      return hr;
-    }
-  }
-  else if(riid == __uuidof(IDXGIDevice1))
-  {
-    hr = m_pDevice->QueryInterface(riid, ppvObject);
-
-    if(SUCCEEDED(hr))
-    {
-      IDXGIDevice1 *real = (IDXGIDevice1 *)(*ppvObject);
-      *ppvObject = (IDXGIDevice1 *)(new WrappedIDXGIDevice4(real, this));
-      return S_OK;
-    }
-    else
-    {
-      *ppvObject = NULL;
-      return hr;
-    }
-  }
-  else if(riid == __uuidof(IDXGIDevice2))
-  {
-    hr = m_pDevice->QueryInterface(riid, ppvObject);
-
-    if(SUCCEEDED(hr))
-    {
-      IDXGIDevice2 *real = (IDXGIDevice2 *)(*ppvObject);
-      *ppvObject = (IDXGIDevice2 *)(new WrappedIDXGIDevice4(real, this));
-      return S_OK;
-    }
-    else
-    {
-      *ppvObject = NULL;
-      return hr;
-    }
-  }
-  else if(riid == __uuidof(IDXGIDevice3))
-  {
-    hr = m_pDevice->QueryInterface(riid, ppvObject);
-
-    if(SUCCEEDED(hr))
-    {
-      IDXGIDevice3 *real = (IDXGIDevice3 *)(*ppvObject);
-      *ppvObject = (IDXGIDevice3 *)(new WrappedIDXGIDevice4(real, this));
-      return S_OK;
-    }
-    else
-    {
-      *ppvObject = NULL;
-      return hr;
-    }
-  }
-  else if(riid == __uuidof(IDXGIDevice4))
-  {
-    hr = m_pDevice->QueryInterface(riid, ppvObject);
-
-    if(SUCCEEDED(hr))
-    {
-      IDXGIDevice4 *real = (IDXGIDevice4 *)(*ppvObject);
-      *ppvObject = (IDXGIDevice4 *)(new WrappedIDXGIDevice4(real, this));
-      return S_OK;
-    }
-    else
-    {
-      *ppvObject = NULL;
-      return hr;
+      return E_NOINTERFACE;
     }
   }
   else if(riid == __uuidof(ID3D11Device))

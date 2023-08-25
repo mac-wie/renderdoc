@@ -550,6 +550,7 @@ private:
   ID3D11Device5 *m_pDevice5;
   ID3D11InfoQueue *m_pInfoQueue;
   WrappedID3D11DeviceContext *m_pImmediateContext;
+  WrappedIDXGIDevice4 *m_pWrappedIDXGIDevice = NULL;
 
   uint32_t m_GlobalEXTUAV = ~0U;
   uint64_t m_ThreadLocalEXTUAVSlot = ~0ULL;

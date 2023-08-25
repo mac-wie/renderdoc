@@ -45,9 +45,15 @@ class RefCountDXGIObject : public IDXGIObject
   IDXGIObject *m_pReal;
   unsigned int m_iRefcount;
 
+  RefCountDXGIObject *m_pParent;
+
 public:
-  RefCountDXGIObject(IDXGIObject *real) : m_pReal(real), m_iRefcount(1) {}
-  virtual ~RefCountDXGIObject() {}
+  RefCountDXGIObject(IDXGIObject *real, RefCountDXGIObject *parent = NULL)
+      : m_pReal(real), m_pParent(parent), m_iRefcount(1)
+  {
+    SAFE_ADDREF(m_pParent);
+  }
+  virtual ~RefCountDXGIObject() { SAFE_RELEASE(m_pParent); }
   static bool HandleWrap(const char *ifaceName, REFIID riid, void **ppvObject);
   static HRESULT WrapQueryInterface(IUnknown *real, const char *ifaceName, REFIID riid,
                                     void **ppvObject);
@@ -1188,7 +1194,7 @@ class WrappedIDXGIAdapter4 : public IDXGIAdapter4, public RefCountDXGIObject
   IDXGIAdapter4 *m_pReal4;
 
 public:
-  WrappedIDXGIAdapter4(IDXGIAdapter *real);
+  WrappedIDXGIAdapter4(IDXGIAdapter *real, RefCountDXGIObject *parent);
   virtual ~WrappedIDXGIAdapter4();
 
   IMPLEMENT_IDXGIOBJECT_WITH_REFCOUNTDXGIOBJECT_CUSTOMQUERY;
@@ -1323,26 +1329,44 @@ class WrappedIDXGIDevice4 : public IDXGIDevice4, public RefCountDXGIObject
   ID3DDevice *m_pD3DDevice;
 
 public:
-  WrappedIDXGIDevice4(IDXGIDevice *real, ID3DDevice *d3d);
+  WrappedIDXGIDevice4(IDXGIDevice *real, ID3DDevice *d3d, RefCountDXGIObject *parent = NULL);
   virtual ~WrappedIDXGIDevice4();
 
   ALLOCATE_WITH_WRAPPED_POOL(WrappedIDXGIDevice4);
 
-  IMPLEMENT_IDXGIOBJECT_WITH_REFCOUNTDXGIOBJECT_CUSTOMQUERY;
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject);
-
   ID3DDevice *GetD3DDevice() { return m_pD3DDevice; }
   //////////////////////////////
-  // implement IDXGIDevice
+  // implement IUnknown
+  ULONG STDMETHODCALLTYPE AddRef() { return m_pD3DDevice->AddRef(); }
+  ULONG STDMETHODCALLTYPE Release() { return m_pD3DDevice->Release(); }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject);
 
+  //////////////////////////////
+  // implement IDXGIObject
+  HRESULT STDMETHODCALLTYPE SetPrivateData(REFIID Name, UINT DataSize, const void *pData)
+  {
+    return RefCountDXGIObject::SetPrivateData(Name, DataSize, pData);
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFIID Name, const IUnknown *pUnknown)
+  {
+    return RefCountDXGIObject::SetPrivateDataInterface(Name, pUnknown);
+  }
+  HRESULT STDMETHODCALLTYPE GetPrivateData(REFIID Name, UINT *pDataSize, void *pData)
+  {
+    return RefCountDXGIObject::GetPrivateData(Name, pDataSize, pData);
+  }
+  HRESULT STDMETHODCALLTYPE GetParent(REFIID riid, void **ppvObject)
+  {
+    return RefCountDXGIObject::GetParent(riid, ppvObject);
+  }
+
+  //////////////////////////////
+  // implement IDXGIDevice
   virtual HRESULT STDMETHODCALLTYPE GetAdapter(
       /* [annotation][out] */
       __out IDXGIAdapter **pAdapter)
   {
-    HRESULT ret = m_pReal->GetAdapter(pAdapter);
-    if(SUCCEEDED(ret))
-      *pAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(*pAdapter));
-    return ret;
+    return GetParent(__uuidof(IDXGIAdapter), (void **)pAdapter);
   }
 
   virtual HRESULT STDMETHODCALLTYPE CreateSurface(
@@ -1477,7 +1501,7 @@ public:
   {
     HRESULT ret = m_pReal->EnumAdapters(Adapter, ppAdapter);
     if(SUCCEEDED(ret))
-      *ppAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(*ppAdapter));
+      *ppAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(*ppAdapter, this));
     return ret;
   }
 
@@ -1508,7 +1532,7 @@ public:
   {
     HRESULT ret = m_pReal->CreateSoftwareAdapter(Module, ppAdapter);
     if(SUCCEEDED(ret))
-      *ppAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(*ppAdapter));
+      *ppAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(*ppAdapter, this));
     return ret;
   }
 
@@ -1531,7 +1555,7 @@ public:
     HRESULT ret = factory->EnumAdapters1(Adapter, ppAdapter);
 
     if(SUCCEEDED(ret))
-      *ppAdapter = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(*ppAdapter));
+      *ppAdapter = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(*ppAdapter, this));
     return ret;
   }
 
@@ -1658,27 +1682,27 @@ public:
     if(riid == __uuidof(IDXGIAdapter4))
     {
       IDXGIAdapter4 *adapter = (IDXGIAdapter4 *)*ppvAdapter;
-      *ppvAdapter = (IDXGIAdapter4 *)(new WrappedIDXGIAdapter4(adapter));
+      *ppvAdapter = (IDXGIAdapter4 *)(new WrappedIDXGIAdapter4(adapter, this));
     }
     else if(riid == __uuidof(IDXGIAdapter3))
     {
       IDXGIAdapter3 *adapter = (IDXGIAdapter3 *)*ppvAdapter;
-      *ppvAdapter = (IDXGIAdapter3 *)(new WrappedIDXGIAdapter4(adapter));
+      *ppvAdapter = (IDXGIAdapter3 *)(new WrappedIDXGIAdapter4(adapter, this));
     }
     else if(riid == __uuidof(IDXGIAdapter2))
     {
       IDXGIAdapter2 *adapter = (IDXGIAdapter2 *)*ppvAdapter;
-      *ppvAdapter = (IDXGIAdapter2 *)(new WrappedIDXGIAdapter4(adapter));
+      *ppvAdapter = (IDXGIAdapter2 *)(new WrappedIDXGIAdapter4(adapter, this));
     }
     else if(riid == __uuidof(IDXGIAdapter1))
     {
       IDXGIAdapter1 *adapter = (IDXGIAdapter1 *)*ppvAdapter;
-      *ppvAdapter = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(adapter));
+      *ppvAdapter = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(adapter, this));
     }
     else if(riid == __uuidof(IDXGIAdapter))
     {
       IDXGIAdapter *adapter = (IDXGIAdapter *)*ppvAdapter;
-      *ppvAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(adapter));
+      *ppvAdapter = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(adapter, this));
     }
     else
     {

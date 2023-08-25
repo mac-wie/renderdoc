@@ -75,31 +75,31 @@ bool RefCountDXGIObject::HandleWrap(const char *ifaceName, REFIID riid, void **p
   else if(riid == __uuidof(IDXGIAdapter))
   {
     IDXGIAdapter *real = (IDXGIAdapter *)(*ppvObject);
-    *ppvObject = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(real));
+    *ppvObject = (IDXGIAdapter *)(new WrappedIDXGIAdapter4(real, NULL));
     return true;
   }
   else if(riid == __uuidof(IDXGIAdapter1))
   {
     IDXGIAdapter1 *real = (IDXGIAdapter1 *)(*ppvObject);
-    *ppvObject = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(real));
+    *ppvObject = (IDXGIAdapter1 *)(new WrappedIDXGIAdapter4(real, NULL));
     return true;
   }
   else if(riid == __uuidof(IDXGIAdapter2))
   {
     IDXGIAdapter2 *real = (IDXGIAdapter2 *)(*ppvObject);
-    *ppvObject = (IDXGIAdapter2 *)(new WrappedIDXGIAdapter4(real));
+    *ppvObject = (IDXGIAdapter2 *)(new WrappedIDXGIAdapter4(real, NULL));
     return true;
   }
   else if(riid == __uuidof(IDXGIAdapter3))
   {
     IDXGIAdapter3 *real = (IDXGIAdapter3 *)(*ppvObject);
-    *ppvObject = (IDXGIAdapter3 *)(new WrappedIDXGIAdapter4(real));
+    *ppvObject = (IDXGIAdapter3 *)(new WrappedIDXGIAdapter4(real, NULL));
     return true;
   }
   else if(riid == __uuidof(IDXGIAdapter4))
   {
     IDXGIAdapter4 *real = (IDXGIAdapter4 *)(*ppvObject);
-    *ppvObject = (IDXGIAdapter4 *)(new WrappedIDXGIAdapter4(real));
+    *ppvObject = (IDXGIAdapter4 *)(new WrappedIDXGIAdapter4(real, NULL));
     return true;
   }
   else if(riid == __uuidof(IDXGIFactory))
@@ -193,12 +193,24 @@ HRESULT STDMETHODCALLTYPE RefCountDXGIObject::GetParent(
     /* [in] */ REFIID riid,
     /* [retval][out] */ void **ppParent)
 {
-  HRESULT ret = m_pReal->GetParent(riid, ppParent);
+  if(m_pParent)
+  {
+    return m_pParent->QueryInterface(riid, ppParent);
+  }
+  else
+  {
+    HRESULT ret = m_pReal->GetParent(riid, ppParent);
 
-  if(SUCCEEDED(ret))
-    HandleWrap("GetParent", riid, ppParent);
+    if(SUCCEEDED(ret))
+    {
+      HandleWrap("GetParent", riid, ppParent);
 
-  return ret;
+      m_pParent = (RefCountDXGIObject *)(*ppParent);
+      SAFE_ADDREF(m_pParent);
+    }
+
+    return ret;
+  }
 }
 
 HRESULT RefCountDXGIObject::WrapQueryInterface(IUnknown *real, const char *ifaceName, REFIID riid,
@@ -832,8 +844,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIOutput6::QueryInterface(REFIID riid, void 
   return RefCountDXGIObject::QueryInterface("IDXGIOutput", riid, ppvObject);
 }
 
-WrappedIDXGIAdapter4::WrappedIDXGIAdapter4(IDXGIAdapter *real)
-    : RefCountDXGIObject(real), m_pReal(real)
+WrappedIDXGIAdapter4::WrappedIDXGIAdapter4(IDXGIAdapter *real, RefCountDXGIObject *parent)
+    : RefCountDXGIObject(real, parent), m_pReal(real)
 {
   m_pReal1 = NULL;
   real->QueryInterface(__uuidof(IDXGIAdapter1), (void **)&m_pReal1);
@@ -918,11 +930,10 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIAdapter4::QueryInterface(REFIID riid, void
   return RefCountDXGIObject::QueryInterface("IDXGIAdapter", riid, ppvObject);
 }
 
-WrappedIDXGIDevice4::WrappedIDXGIDevice4(IDXGIDevice *real, ID3DDevice *d3d)
-    : RefCountDXGIObject(real), m_pReal(real), m_pD3DDevice(d3d)
+WrappedIDXGIDevice4::WrappedIDXGIDevice4(IDXGIDevice *real, ID3DDevice *d3d,
+                                         RefCountDXGIObject *parent)
+    : RefCountDXGIObject(real, parent), m_pReal(real), m_pD3DDevice(d3d)
 {
-  m_pD3DDevice->AddRef();
-
   m_pReal1 = NULL;
   real->QueryInterface(__uuidof(IDXGIDevice1), (void **)&m_pReal1);
   m_pReal2 = NULL;
@@ -940,7 +951,6 @@ WrappedIDXGIDevice4::~WrappedIDXGIDevice4()
   SAFE_RELEASE(m_pReal3);
   SAFE_RELEASE(m_pReal4);
   SAFE_RELEASE(m_pReal);
-  SAFE_RELEASE(m_pD3DDevice);
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDXGIDevice4::QueryInterface(REFIID riid, void **ppvObject)
